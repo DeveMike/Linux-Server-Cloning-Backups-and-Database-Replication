@@ -1,28 +1,29 @@
 <!DOCTYPE html>
-<html lang="fi">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Viikko 2 – Kävijälaskuri</title>
+  <title>Week 4 – Read-only replica</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center;
            font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.6; color: #e6edf3;
            background: radial-gradient(circle at 20% 10%, #1f3b5c 0%, #0b1220 55%); padding: 24px; }
-    .card { width: 100%; max-width: 640px; background: rgba(255,255,255,.05);
+    .card { width: 100%; max-width: 760px; background: rgba(255,255,255,.05);
             border: 1px solid rgba(255,255,255,.1); border-radius: 20px; padding: 40px;
             box-shadow: 0 20px 60px rgba(0,0,0,.45); backdrop-filter: blur(6px); }
     .tag { font-size: .75rem; letter-spacing: .15em; text-transform: uppercase; color: #4fd1a5; }
-    h1 { margin: 6px 0 4px; font-size: 1.9rem; }
-    .sub { margin: 0; color: #8b9bb0; }
+    .sub { margin: 0; color: #ff9b9b; font-weight: 700; }
     .counter { margin: 28px 0; padding: 26px; border-radius: 16px; text-align: center;
                background: linear-gradient(135deg, rgba(79,209,165,.18), rgba(124,196,255,.12));
                border: 1px solid rgba(79,209,165,.4); }
     .num { font-size: 4.2rem; font-weight: 800; line-height: 1; color: #4fd1a5; }
     .lbl { margin-top: 6px; color: #9fb0c3; font-size: .95rem; }
     h2 { font-size: 1rem; color: #7cc4ff; margin: 22px 0 6px; }
-    p { margin: 0 0 8px; }
+    p, li { margin: 0 0 8px; }
+    a { color: #7cc4ff; }
     code { background: rgba(0,0,0,.4); color: #ffd28a; padding: 2px 6px; border-radius: 5px; font-size: .88em; }
+    pre { background: rgba(0,0,0,.4); color: #ffd28a; padding: 12px; border-radius: 10px; overflow-x: auto; font-size: .82em; }
     .links { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
     .btn { text-decoration: none; padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: .95rem; }
     .primary { background: #4fd1a5; color: #0b1220; }
@@ -32,26 +33,101 @@
 </head>
 <body>
   <main class="card">
-    <div class="tag">Linux-kurssi · Viikko 2</div>
-    <h1>Python-verkkosovellus</h1>
-    <p class="sub">Flask + Gunicorn + MariaDB Nginxin takana</p>
+    <div class="tag">Week 4 · Server B</div>
+    <p class="sub">READ-ONLY REPLICA</p>
 
     <div class="counter">
       <div class="num">{{ kaynnit }}</div>
-      <div class="lbl">sivulatausta</div>
+      <div class="lbl">visits on server A, read from B's own replicated database</div>
     </div>
+    <p>This page only does a <code>SELECT</code> so it does not change the database.</p>
 
-    <h2>Tallennus</h2>
-    <p>Laskuri on MariaDB-taulussa <code>laskuri</code>. Jokainen lataus ajaa
-       <code>kaynnit = kaynnit + 1</code>, joten arvo säilyy levyllä uudelleenkäynnistyksen yli.</p>
+    <h2>Counter pages</h2>
+    <ul>
+      <li>Server A: <a href="http://195.148.21.19/viikko2/">http://195.148.21.19/viikko2/</a></li>
+      <li>Server B: <a href="http://195.148.21.99/viikko4/">http://195.148.21.99/viikko4/</a></li>
+    </ul>
 
-    <h2>Uudelleenkäynnistystesti</h2>
-    <p>Ennen <code>sudo reboot</code> -komentoa laskuri oli X. Rebootin jälkeen sivu aukesi
-       ja laskuri jatkoi arvosta X+1.</p>
+    <h2>How B was created</h2>
+    <p>I shut down server A and made a snapshot of it in cPouta, then started A again. From the snapshot I
+       launched a new instance with same flavor, network, key and security group. B got its own floating IP
+       <code>195.148.21.99</code> (internal <code>192.168.1.200</code>). The snapshot copied the whole disk so B had the
+       same system, website and database as A. After that B was its own server and didnt know about changes on A.
+       I turned off B's own week 2 app because B's database is read-only.</p>
+
+    <h2>Storage and backup locations</h2>
+    <ul>
+      <li>Both servers: one disk, <code>/dev/vda1</code> mounted on <code>/</code>, 77 GB, ext4</li>
+      <li>Website: <code>/var/www/html</code> on both</li>
+      <li>Database: <code>/var/lib/mysql</code> on both</li>
+      <li>Backups on B: <code>/var/backups/www-from-a/&lt;date_time&gt;/</code>, not inside the web root</li>
+      <li>Backup log on B: <code>/var/log/www-backup.log</code></li>
+    </ul>
+
+    <h2>Users, ownership and permissions</h2>
+    <ul>
+      <li><code>/var/backups/www-from-a</code> – root:root, 700, only root can read the backups</li>
+      <li><code>/usr/local/sbin/backup-www.sh</code> – root:root, 755, only root can change the script</li>
+      <li><code>/var/log/www-backup.log</code> – root:adm, 640</li>
+      <li><code>/root/.ssh/sync_ed25519</code> – root, 600, the SSH key B uses to connect to A as <code>ubuntu</code></li>
+      <li><code>/etc/viikko4.env</code> – root, 600, password for the app database user</li>
+      <li>Backup runs from root's crontab. The app (<code>viikko4.service</code>) runs as <code>ubuntu</code>.</li>
+    </ul>
+    <p>Database users:</p>
+    <ul>
+      <li><code>replicator</code> on A – can login only from B's IP <code>192.168.1.200</code>, only <code>REPLICATION SLAVE</code></li>
+      <li><code>viikko4ro</code> on B – only from localhost, only <code>SELECT</code> on <code>viikko2.laskuri</code></li>
+    </ul>
+    <p>B's database has <code>read_only = ON</code> so normal users cannot write to it. A's MariaDB listens only on
+       localhost and the internal IP and port 3306 is not open to internet.</p>
+
+    <h2>Hourly backup</h2>
+    <pre>17 * * * * /usr/bin/flock -n /run/www-backup.lock /usr/local/sbin/backup-www.sh</pre>
+    <p>Every hour B copies A's <code>/var/www/html</code> with rsync over SSH to a new folder that has the date
+       and time in the name. Every run writes OK or FAIL to the log.</p>
+
+    <h2>Continuous replication</h2>
+    <p>A writes all database changes to binary log. B connects to A as <code>replicator</code>, reads the log and
+       makes the same changes to its own database. First I loaded B with a full dump from A and started
+       replication from the log position that was in the dump.</p>
+    <p>Replication is not a backup because it copies also the mistakes right away. If something gets deleted on A
+       it gets deleted on B too. Backups keep the old versions so you can go back to them.</p>
+
+    <h2>Test results</h2>
+    <ul>
+      <li>Both pages open from internet: OK</li>
+      <li>Loading A's page updates B: B showed 85, after loading A it showed 86</li>
+      <li>Loading B's page does not increment: number stayed same after many reloads</li>
+      <li>Replication status: OK</li>
+      <li>Scheduled backups: 15:17, 16:17 and 17:17 OK</li>
+      <li>Restore test: <code>index.html</code> restored to <code>/tmp/restore-test/</code>, SHA-256 same as the original on A</li>
+      <li>After reboot of B: nginx, mariadb, viikko4 and cron active, replication running, page OK, 16:17 backup OK</li>
+    </ul>
+    <pre>$ sudo mariadb -e "SHOW REPLICA STATUS\G" | grep -E 'Running|Behind'
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+        Seconds_Behind_Master: 0</pre>
+    <pre>$ sudo cat /var/log/www-backup.log
+2026-11-21 14:19:05 OK   2026-11-21_1419   (manual test)
+2026-11-21 15:17:01 OK   2026-11-21_1517
+2026-11-21 16:17:02 OK   2026-11-21_1617
+2026-11-21 17:17:02 OK   2026-11-21_1717</pre>
+    <pre>$ sha256sum /tmp/restore-test/index.html       (B, restored)
+e0029e93dd4b9f914fda6eaffc3a18f576842f4c5e2acabc7612bcec0b079269
+$ sha256sum /var/www/html/index.html            (A, original)
+e0029e93dd4b9f914fda6eaffc3a18f576842f4c5e2acabc7612bcec0b079269</pre>
+
+    <h2>Problem I solved and what I learned</h2>
+    <p>Replication didnt start at first. <code>SHOW REPLICA STATUS</code> said
+       <code>Access denied for user 'replicator'</code>. So the connection to A worked but the password was wrong,
+       I had different password on A and B. I put a new password on A with <code>ALTER USER</code> and gave the same
+       one to B with <code>CHANGE MASTER TO MASTER_PASSWORD</code>. After that both showed <code>Yes</code>.</p>
+    <p>I learned how to connect two servers together so that the second one copies the database from the first
+       one automatically.</p>
 
     <div class="links">
-      <a class="btn primary" href="https://github.com/DeveMike/viikko2">Lähdekoodi GitHubissa</a>
-      <a class="btn ghost" href="/">← Viikko 1</a>
+      <a class="btn primary" href="https://github.com/DeveMike/Linux-Server-Cloning-Backups-and-Database-Replication">Source code on GitHub</a>
+      <a class="btn ghost" href="http://195.148.21.19/viikko2/">Server A counter →</a>
     </div>
   </main>
 </body>
